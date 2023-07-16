@@ -16,11 +16,47 @@ BERT (Bidirectional Encoder Representations from Transformers)和GPT (Generative
 
 BERT和GPT的主要区别在于，BERT只使用了Transformer的编码器部分，而GPT只使用了Transformer的解码器部分。
 
-BERT中的Transformer编码器如下：
 ```python
 from torch import nn
-from transformer import MultiHeadAttention
 
+class MultiHeadAttention(nn.Module):
+    def __init__(self, heads, d_model, dropout=0.1):
+        super().__init__()
+
+        assert d_model % heads == 0, "Dimension of model should be divisible by number of heads"
+
+        self.d_k = d_model // heads
+        self.h = heads
+
+        self.q_linear = nn.Linear(d_model, d_model)
+        self.v_linear = nn.Linear(d_model, d_model)
+        self.k_linear = nn.Linear(d_model, d_model)
+        self.dropout = nn.Dropout(dropout)
+        self.out = nn.Linear(d_model, d_model)
+
+    def forward(self, q, k, v, mask=None):
+        bs = q.size(0)
+
+        # perform linear operation and split into N heads
+        k = self.k_linear(k).view(bs, -1, self.h, self.d_k)
+        q = self.q_linear(q).view(bs, -1, self.h, self.d_k)
+        v = self.v_linear(v).view(bs, -1, self.h, self.d_k)
+
+        # transpose to get dimensions bs * N * sl * d_model
+        k = k.transpose(1,2)
+        q = q.transpose(1,2)
+        v = v.transpose(1,2)
+
+        scores = self.attention(q, k, v, self.d_k, mask, self.dropout)
+
+        # concatenate heads and put through final linear layer
+        concat = scores.transpose(1,2).contiguous().view(bs, -1, self.d_model)
+
+        output = self.out(concat)
+
+        return output
+
+# Bert的编码器
 class TransformerEncoder(nn.Module):
     def __init__(self, d_model, heads, dropout=0.1, hidden_dim=2048):
         super().__init__()
@@ -40,12 +76,7 @@ class TransformerEncoder(nn.Module):
         fedforward = self.feed_forward(x)
         return self.norm2(fedforward + x)
 
-```
-GPT中的Transformer解码器如下：
-```python
-from torch import nn
-from transformer import MultiHeadAttention
-
+# GPT的解码器
 class TransformerDecoder(nn.Module):
     def __init__(self, d_model, heads, dropout=0.1, hidden_dim=2048):
         super().__init__()
